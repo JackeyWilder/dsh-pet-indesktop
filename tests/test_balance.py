@@ -206,16 +206,30 @@ def test_friday_evening_next_peak_skips_weekend():
 # 官方口径仍是空闲——不是工作日高峰。
 
 
-def test_statutory_holiday_name_reports_free_days_only():
+def test_statutory_holiday_name_reports_free_days_only(monkeypatch):
     """festival_calendar 的节假日边界：只认放假日，补班日与表外日期返回 None。"""
+    from pet.festival import calendar as festival_calendar
     from pet.festival.calendar import statutory_holiday_name
 
     assert statutory_holiday_name(date(2026, 10, 1)) == "国庆节"
     assert statutory_holiday_name(date(2026, 2, 16)) == "春节"
     # 调休补班的周六（2026-10-10）是上班日，不属于放假日
     assert statutory_holiday_name(date(2026, 10, 10)) is None
-    # 内嵌安排表之外（2026-10-11 起）降级为 None = 「未知」，不是「确认上班」
-    assert statutory_holiday_name(date(2027, 1, 1)) is None
+    # 表外日期降级为 None = 「未知」，不是「确认上班」。
+    # 表覆盖到哪一年由 lunar-python 的内嵌安排表决定并随其升级前移
+    # （2026-11 实测：已含 2027 → 2027-01-01 能返回「元旦节」），所以这里把
+    # 数据源打空来验证降级语义，而不是赌某个未来年份还没有数据。
+    class _NoTable:
+        @staticmethod
+        def getHoliday(year, month, day):  # noqa: ARG004 - 模拟 lunar-python 接口
+            return None
+
+    monkeypatch.setattr(festival_calendar, "HolidayUtil", _NoTable)
+    statutory_holiday_name.cache_clear()
+    try:
+        assert statutory_holiday_name(date(2027, 1, 1)) is None
+    finally:
+        statutory_holiday_name.cache_clear()
 
 
 def test_statutory_holidays_are_idle_all_day():
@@ -275,17 +289,34 @@ def test_format_switch_time_same_iso_week_uses_bare_weekday():
     ) == "下周一 09:00"
 
 
-def test_pricing_degrades_without_holiday_calendar_data():
-    """2027 起 HolidayUtil 无内嵌数据：不抛异常，退回星期规则。"""
-    # 2027-01-01 是周五，表外日期按工作日高峰判
-    assert balance.deepseek_pricing_tier(_bj(10, day=1, month=1, year=2027)) == "peak"
-    assert balance.deepseek_pricing_tier(_bj(13, day=1, month=1, year=2027)) == "idle"
-    # 周末规则与表无关
-    assert balance.deepseek_pricing_tier(_bj(10, day=2, month=1, year=2027)) == "idle"
-    # 切换扫描同样可用（不因表耗尽而抛错）
-    tier, when = balance._next_pricing_switch(_bj(10, day=1, month=1, year=2027))
-    assert tier == "idle"
-    assert when.date() == date(2027, 1, 1)
+def test_pricing_degrades_without_holiday_calendar_data(monkeypatch):
+    """HolidayUtil 无内嵌数据：不抛异常，退回星期规则。
+
+    数据源用桩打空（真实 lunar-python 从 2026-11 起已含 2027 安排表，直接拿
+    2027-01-01 验证降级会随依赖升级而失效）。桩只影响本用例，退出时清缓存。
+    """
+    from pet.festival import calendar as festival_calendar
+    from pet.festival.calendar import statutory_holiday_name
+
+    class _NoTable:
+        @staticmethod
+        def getHoliday(year, month, day):  # noqa: ARG004 - 模拟 lunar-python 接口
+            return None
+
+    monkeypatch.setattr(festival_calendar, "HolidayUtil", _NoTable)
+    statutory_holiday_name.cache_clear()
+    try:
+        # 2027-01-01 是周五，表外日期按工作日高峰判
+        assert balance.deepseek_pricing_tier(_bj(10, day=1, month=1, year=2027)) == "peak"
+        assert balance.deepseek_pricing_tier(_bj(13, day=1, month=1, year=2027)) == "idle"
+        # 周末规则与表无关
+        assert balance.deepseek_pricing_tier(_bj(10, day=2, month=1, year=2027)) == "idle"
+        # 切换扫描同样可用（不因表耗尽而抛错）
+        tier, when = balance._next_pricing_switch(_bj(10, day=1, month=1, year=2027))
+        assert tier == "idle"
+        assert when.date() == date(2027, 1, 1)
+    finally:
+        statutory_holiday_name.cache_clear()
 
 
 def test_chat_session_title_roundtrip():

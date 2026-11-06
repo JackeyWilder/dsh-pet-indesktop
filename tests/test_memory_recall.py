@@ -678,7 +678,10 @@ def test_add_accepts_full_remember_command_text(tmp_path):
 def test_manual_pin_remember_topic_unarchives(tmp_path):
     """D：手动钉「记住话题：」是允许解除归档的入口（自动来源不允许）。"""
     path = tmp_path / "memory.json"
-    mem = ChatMemory(path, clock=lambda: NOW)
+    # ``load()`` 用真实时钟判定 topic 隐式超期（TOPIC_ARCHIVE_DAYS=14）：写死 NOW
+    # 的用例只在写死当天起 14 天内成立，之后「手动钉解除归档」会先被 in-memory
+    # 老化盖成 archived=True 而假红。这里让时钟跟着真实时间走。
+    mem = ChatMemory(path, clock=lambda: datetime.now(timezone.utc))
     entry, _ = mem.add("记住话题：那个 Bug")
     assert mem.set_archived(entry["id"], True) is True
     assert mem.load()[0]["archived"] is True
