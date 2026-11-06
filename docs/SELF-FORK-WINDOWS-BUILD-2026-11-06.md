@@ -283,16 +283,24 @@ Release API 的每个 asset 都带 `digest`（`sha256:...`）与 `size`，所以
 
 ### 发布后重新生成 update.json
 
+用 `scripts/refresh_update_json.py`（从 Release API 抄 `size` 与 `digest`，不手算哈希）：
+
 ```powershell
 $env:HTTPS_PROXY='http://127.0.0.1:7892'
-gh api /repos/JackeyWilder/dsh-pet-indesktop/releases/latest --jq '{tag: .tag_name, html_url: .html_url, version: .tag_name, assets: [.assets[] | {name, size, digest}]}'
-# 按上游 update.json 的字段形状写成 {version, html_url, assets:{<name>:{fileName,urls:[…],size,sha256,platform,kind,variant}}}
-# urls 用 https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/<tag>/<name>
-# sha256 取 digest 去掉 "sha256:" 前缀
+python scripts/refresh_update_json.py --dry-run   # 先看内容
+python scripts/refresh_update_json.py             # 写 update.json
+git add update.json; git commit -m 'chore: 更新 update.json 指向 vX.Y.Z 自用构建'
 ```
 
-提交后 jsDelivr 有缓存（`@main` 约 12 小时），期间回退路径可能还是旧清单——正常，API
-路径优先且可用。
+脚本行为：取 `/releases/latest` → 按上游同名形状写 `{version, html_url, notes, assets}`；
+`sha256` 取 `digest` 去掉 `sha256:` 前缀；任一 asset 缺 digest 或清单为空时**直接退出**，
+不写半成品。提交后 jsDelivr 有缓存（`@main` 约 12 小时），期间回退路径可能还是旧清单
+——正常，API 路径优先且可用。
+
+**发布前记得碰版本号**：更新判定走 `version_parts()`，只取数字前缀，
+`v4.4.0-jw.1` 与 `4.4.0` 相等 → **不会提示更新**。要让自更新真的触发，得把
+`pet/__init__.py` 的 `__version__` 提到更高（比如 `4.4.1`），它同时决定安装包的
+ProductVersion。tag 名随意，但别与上游已有 tag 重名。
 
 ### 与之配套的两条仓库设置
 
