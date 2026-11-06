@@ -154,6 +154,25 @@ gh release create v4.4.0-jw.1 -R JackeyWilder/dsh-pet-indesktop `
 `setup.exe` 未签名（iss 里没有 SignTool），首次运行会吃 SmartScreen「Windows 已保护你的电脑」
 提示，需要点「更多信息 → 仍要运行」。自用可以接受；要消掉得买证书并给 iss 配 `SignTool`。
 
+### 6. 改 `REPO` 会连带改动角色包注册表的信任面
+
+`pet/pack_download.py:143` 的 `parse_registry()` 用**同一个** `updater._trusted_https_url()`
+校验注册表里的下载地址，而那个函数里 `github.com` 分支要求路径含 `/{REPO}/`。所以把
+`REPO` 换成自有仓库的那一刻，任何仍写着 `github.com/MerZlin/...` 的注册表条目都会变成
+「不受信任的地址」。本次就是这样被 CI 抓到一条用例
+（`tests/test_pack_download.py::test_registry_allows_same_version_in_two_resolutions`，
+run 42263637817 的唯一红，改指自有仓库即绿）。两条推论：
+
+- 自己发布的角色包如果挂在**上游** Release 上，自用版将拒绝安装——要兼容得把上游路径
+  加进白名单，而不是改 `REPO`。
+- 排查这类红时先 grep `MerZlin` 与 `_trusted_https_url` 的所有调用点，别只看 `updater.py`。
+
+### 7. 一次 tag 推送会触发三端构建
+
+`build-linux.yml`、`build-macos.yml`、`build-windows.yml` 的 `on.push.tags` 都监听
+`v*`，所以打一个 tag 会同时起三个 workflow（macOS 那次还直接 failure）。自用只需要
+Windows，已把前两个 `gh workflow disable`；之后 tag 推送只构建 Windows 并创建 draft Release。
+
 ## 五、本次实跑记录
 
 ### 5.1 两次 run 的对照
