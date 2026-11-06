@@ -145,8 +145,8 @@ def test_structured_manifest_keeps_mirrors_and_integrity_fields(monkeypatch):
                 "dsh-pet-standalone-webm-chat-setup.exe": {
                     "fileName": "dsh-pet-standalone-webm-chat-setup.exe",
                     "urls": [
-                        "https://github.com/MerZlin/dsh-pet-indesktop/releases/download/v4.3.0/a.exe",
-                        "https://cdn.jsdelivr.net/gh/MerZlin/dsh-pet-indesktop@v4.3.0/a.exe",
+                        "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.3.0-jw.1/a.exe",
+                        "https://cdn.jsdelivr.net/gh/JackeyWilder/dsh-pet-indesktop@v4.3.0-jw.1/a.exe",
                     ],
                     "size": 123,
                     "sha256": "A" * 64,
@@ -193,7 +193,7 @@ def test_download_asset_verifies_size_and_sha256(tmp_path, monkeypatch):
     path = updater.download_asset(
         {
             "name": "dsh-pet-standalone-webm-chat-setup.exe",
-            "urls": ["https://github.com/MerZlin/dsh-pet-indesktop/releases/download/v4.3.0/a.exe"],
+            "urls": ["https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.3.0-jw.1/a.exe"],
             "size": len(b"installer-payload"),
             "sha256": digest,
         },
@@ -215,9 +215,56 @@ def test_download_asset_rejects_untrusted_origin(tmp_path):
 def test_select_windows_installer_supports_legacy_and_structured_assets(monkeypatch):
     monkeypatch.setattr(updater, "os", _ns_shim(os, name="nt"))
     release = {
-        "assets": {"dsh-pet-standalone-webm-setup.exe": "https://github.com/MerZlin/dsh-pet-indesktop/releases/download/v4.3.0/a.exe"},
+        "assets": {"dsh-pet-standalone-webm-setup.exe": "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.3.0-jw.1/a.exe"},
         "asset_details": {},
     }
     asset = updater.select_windows_installer(release, include_chat=False)
     assert asset["name"] == "dsh-pet-standalone-webm-setup.exe"
     assert asset["urls"]
+
+
+def test_updater_targets_self_fork_only():
+    """自用 fork：所有地址都由 REPO 派生，一处都不许再指回上游。"""
+    repo = "JackeyWilder/dsh-pet-indesktop"
+    assert updater.REPO == repo
+    assert updater.RELEASE_API == f"https://api.github.com/repos/{repo}/releases/latest"
+    assert updater.REPO_URL == f"https://github.com/{repo}"
+    # 菜单项 id 沿用上游的 quark_download，值必须是自己的 Release 列表：
+    # 上游那个夸克分享装的是上游包，点开会覆盖自用改动。
+    assert updater.QUARK_PAN_URL == f"https://github.com/{repo}/releases"
+    assert len(updater._UPDATE_JSON_URLS) == 3
+    for url in updater._UPDATE_JSON_URLS:
+        assert f"/gh/{repo}@main/update.json" in url
+    assert all("MerZlin" not in url for url in updater._UPDATE_JSON_URLS)
+
+
+def test_upstream_github_asset_urls_are_not_trusted():
+    """换轨后上游的下载地址必须落到白名单之外，不能偷偷装回上游包。"""
+    upstream = (
+        "https://github.com/MerZlin/dsh-pet-indesktop/releases/download/v4.4.0/"
+        "dsh-pet-standalone-webm-chat-setup.exe"
+    )
+    own = (
+        "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.3.0-jw.1/"
+        "dsh-pet-standalone-webm-chat-setup.exe"
+    )
+    assert updater._trusted_https_url(upstream) is False
+    assert updater._trusted_https_url(own) is True
+
+
+def test_download_asset_refuses_upstream_release_url(tmp_path):
+    import pytest
+
+    with pytest.raises(RuntimeError, match="untrusted URL"):
+        updater.download_asset(
+            {
+                "name": "dsh-pet-standalone-webm-chat-setup.exe",
+                "urls": [
+                    "https://github.com/MerZlin/dsh-pet-indesktop/releases/download/v4.4.0/"
+                    "dsh-pet-standalone-webm-chat-setup.exe"
+                ],
+                "size": 1,
+                "sha256": "a" * 64,
+            },
+            tmp_path,
+        )

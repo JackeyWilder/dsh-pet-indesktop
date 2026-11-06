@@ -23,10 +23,16 @@ from typing import Callable
 from . import __version__
 
 APP_VERSION = __version__
-REPO = 'MerZlin/dsh-pet-indesktop'
+# 自用 fork：检查更新只查本仓库的 Release，不再读上游 MerZlin/dsh-pet-indesktop。
+# RELEASE_API / REPO_URL / _UPDATE_JSON_URLS / 资产白名单里那条「路径必须含
+# /{REPO}/」的判定，全部由这一个常量派生——改这里即整体换轨，无需逐处再改。
+REPO = 'JackeyWilder/dsh-pet-indesktop'
 RELEASE_API = f'https://api.github.com/repos/{REPO}/releases/latest'
 REPO_URL = f'https://github.com/{REPO}'
-QUARK_PAN_URL = 'https://pan.quark.cn/s/68fc681ae486'
+# 名字沿用上游（上下文菜单 id 是 quark_download、文案「夸克网盘下载」），值却指向
+# 自用 fork 的 Release 列表：上游那个夸克分享里放的是上游安装包，点开会把自用版
+# 覆盖掉。要改文案得连 context_menus 的标签一起动，见 docs/SELF-FORK-WINDOWS-BUILD-2026-11-06.md。
+QUARK_PAN_URL = f'https://github.com/{REPO}/releases'
 _UPDATE_JSON_URLS = (
     f'https://cdn.jsdelivr.net/gh/{REPO}@main/update.json',
     f'https://fastly.jsdelivr.net/gh/{REPO}@main/update.json',
