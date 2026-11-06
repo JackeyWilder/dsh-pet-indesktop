@@ -247,19 +247,60 @@ FileVersion     : （空）
 清理：临时解压目录与进程都已删除/结束，`Get-Process dsh-pet*` 为空。
 
 
-## 六、更新器指向上游的问题（自用版待决策）
+## 六、自更新链路：已改指自用 fork（2026-11-07）
 
-`pet/updater.py:26` 写死 `REPO = 'MerZlin/dsh-pet-indesktop'`，`RELEASE_API` 取
-`/releases/latest`，`_UPDATE_JSON_URLS` 走 jsDelivr 的 `update.json`。自用版如果点
-「检查更新」，拉下来并安装的是**上游**的安装包，会覆盖自用改动。菜单「检查更新」入口见
-`pet/app.py:5112`、`pet/app.py:4223`、`pet/sprite_menu_facade.py:412`；没有启动期自动检查。
+原状：`pet/updater.py:26` 写死 `REPO = 'MerZlin/dsh-pet-indesktop'`，`RELEASE_API` 取
+上游 `/releases/latest`，`_UPDATE_JSON_URLS` 走 jsDelivr 的上游 `update.json`。自用版点
+「检查更新」拉下来的是**上游**安装包，会覆盖自用改动。菜单入口见 `pet/app.py:5112`、
+`pet/app.py:4223`、`pet/sprite_menu_facade.py:412`；没有启动期自动检查。
 
-可选处置（都还没做，等拍板）：
+改法：`REPO` 换成 `JackeyWilder/dsh-pet-indesktop`。四个地址（`RELEASE_API`、`REPO_URL`、
+三条 `_UPDATE_JSON_URLS`、以及 `_trusted_https_url` 里那条「github.com 路径必须含
+`/{REPO}/`」的判定）全部由这一个常量派生，所以换轨是一处改动，不需要逐处打补丁。
 
-1. 保持不动，自用版手动忽略「检查更新」（零改动，但要靠自觉）
-2. 把 `REPO` 改成 `JackeyWilder/dsh-pet-indesktop`，并在自己的 Release 上维护
-   `update.json`（自洽，但每个版本都要手工维护一份清单）
-3. 把菜单项在自用分支里禁掉（最省事，但等于放弃更新能力）
+三条连带处理，缺任一条都会让自更新链路半通：
+
+1. **`update.json` 必须一起换**。它是 GitHub API 不可达时的 jsDelivr 回退清单，里面
+   8 条 asset 全部指向上游 `releases/download/...`。只改 `REPO` 不改它，回退路径照样
+   发上游包。本仓库的处理是**删掉上游那份**，每次发布后按下面「发布后重新生成
+   update.json」重新生成——清单里的 `size`/`sha256` 直接从 Release API 的
+   `size`/`digest` 抄，不用自己算。
+2. **`QUARK_PAN_URL` 改指自己的 Release 列表**。上下文菜单项 `quark_download`
+   （`pet/context_menus/registry.py:370` → `:285`）打开的就是这个常量，原来的夸克分享
+   里放的是上游包。**标签文案仍是上游的「夸克网盘下载」**（`registry.py:91`，
+   `tests/test_menu_layout.py:611` 也在断言这句文案）——改文案要连菜单标签与
+   该用例一起动，本次不做，只保证点开的目的地不再是上游。
+3. **回归用例**（`tests/test_updater.py`）：`test_updater_targets_self_fork_only`
+   锁死 `REPO`/`RELEASE_API`/`REPO_URL`/`QUARK_PAN_URL`/三条 manifest 地址；
+   `test_upstream_github_asset_urls_are_not_trusted` 断言上游
+   `releases/download/...` 已落在信任白名单之外、自己的地址仍在白名单内；
+   `test_download_asset_refuses_upstream_release_url` 端到端确认 `download_asset`
+   对上游地址抛 `RuntimeError: untrusted URL`。
+
+`download_asset` 要求资产同时给出 `size` 与 `sha256`，否则拒绝自动安装。实测 GitHub
+Release API 的每个 asset 都带 `digest`（`sha256:...`）与 `size`，所以**只靠 API 就
+够**，`update.json` 只是 API 不可达时的兜底。
+
+### 发布后重新生成 update.json
+
+```powershell
+$env:HTTPS_PROXY='http://127.0.0.1:7892'
+gh api /repos/JackeyWilder/dsh-pet-indesktop/releases/latest --jq '{tag: .tag_name, html_url: .html_url, version: .tag_name, assets: [.assets[] | {name, size, digest}]}'
+# 按上游 update.json 的字段形状写成 {version, html_url, assets:{<name>:{fileName,urls:[…],size,sha256,platform,kind,variant}}}
+# urls 用 https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/<tag>/<name>
+# sha256 取 digest 去掉 "sha256:" 前缀
+```
+
+提交后 jsDelivr 有缓存（`@main` 约 12 小时），期间回退路径可能还是旧清单——正常，API
+路径优先且可用。
+
+### 与之配套的两条仓库设置
+
+- `PR Test Gate`（`.github/workflows/pr-test.yml`，`on.push.branches: [main]`）已
+  `gh workflow disable`：Windows-only 自用仓库跑三端测试只会拖慢每次 push，且
+  macOS job 会被后续 push 的 `cancel-in-progress` 取消而显示成失败，纯噪音。
+- 构建 workflow 保持 active。它只在 `workflow_dispatch` 与 `push tag v*` 上触发，
+  push main 不会自动构建。
 
 ## 七、将来同步上游
 
