@@ -1,0 +1,51 @@
+{
+  "version": "4.4.0-jw.2",
+  "html_url": "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/tag/v4.4.0-jw.2",
+  "notes": "自用构建 v4.4.0-jw.2（由 scripts/refresh_update_json.py 从 Release API 生成）",
+  "assets": {
+    "dsh-pet-standalone-webm-chat-portable.zip": {
+      "fileName": "dsh-pet-standalone-webm-chat-portable.zip",
+      "urls": [
+        "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.4.0-jw.2/dsh-pet-standalone-webm-chat-portable.zip"
+      ],
+      "size": 356667798,
+      "sha256": "0638e8b3bd47b8d07b4f96a547c7cafc37ab2b5d59564d11d632fd2073b4b372",
+      "platform": "",
+      "kind": "",
+      "variant": ""
+    },
+    "dsh-pet-standalone-webm-chat-setup.exe": {
+      "fileName": "dsh-pet-standalone-webm-chat-setup.exe",
+      "urls": [
+        "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.4.0-jw.2/dsh-pet-standalone-webm-chat-setup.exe"
+      ],
+      "size": 301864810,
+      "sha256": "935941e771e4e2e75d08f03d2a52f7e431da8891c387bbebb11c589d083a1e81",
+      "platform": "",
+      "kind": "",
+      "variant": ""
+    },
+    "dsh-pet-standalone-webm-portable.zip": {
+      "fileName": "dsh-pet-standalone-webm-portable.zip",
+      "urls": [
+        "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.4.0-jw.2/dsh-pet-standalone-webm-portable.zip"
+      ],
+      "size": 356338470,
+      "sha256": "17cade43cf80c92910d72cebfc66960f198f56701165e257297b8592b3215b1a",
+      "platform": "",
+      "kind": "",
+      "variant": ""
+    },
+    "dsh-pet-standalone-webm-setup.exe": {
+      "fileName": "dsh-pet-standalone-webm-setup.exe",
+      "urls": [
+        "https://github.com/JackeyWilder/dsh-pet-indesktop/releases/download/v4.4.0-jw.2/dsh-pet-standalone-webm-setup.exe"
+      ],
+      "size": 301538513,
+      "sha256": "e9135c398f202cfef2d1ba322b58c21edaa3d332e868377e5813ce6620d58874",
+      "platform": "",
+      "kind": "",
+      "variant": ""
+    }
+  }
+}
