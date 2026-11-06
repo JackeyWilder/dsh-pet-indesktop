@@ -266,6 +266,32 @@ FileVersion     : （空）
 清理：临时解压目录与进程都已删除/结束，`Get-Process dsh-pet*` 为空。
 
 
+### 5.6 tag 触发的一次完整出包与发布（`v4.4.0-jw.2`）
+
+| 项 | 实测 |
+|---|---|
+| 触发 | `git push origin v4.4.0-jw.2`（此 Linux/macOS workflow 已 disable，只起 Windows 一条） |
+| run | `42269416183`，**success**，**43 分 59 秒**（18:17:57Z → 19:01:56Z） |
+| 主套件 | 通过（单步约 31 min；同一池子上一次是 26.4 min，波动不小，别拿去当超时阈值） |
+| Release | <https://github.com/JackeyWilder/dsh-pet-indesktop/releases/tag/v4.4.0-jw.2> —— CI 建 draft，`gh release edit --draft=false` 发布 |
+
+四个资产（数字来自 Release API 的 `size`/`digest`，`scripts/refresh_update_json.py` 直接抄）：
+
+| 文件 | 字节 | sha256（前 16 位） |
+|---|---|---|
+| `dsh-pet-standalone-webm-chat-setup.exe` | 301,864,810 | `935941e771e4e2e7…` |
+| `dsh-pet-standalone-webm-chat-portable.zip` | 356,667,798 | `0638e8b3bd47b8d0…` |
+| `dsh-pet-standalone-webm-setup.exe` | 301,538,513 | `e9135c398f202cfe…` |
+| `dsh-pet-standalone-webm-portable.zip` | 356,338,470 | `17cade43cf80c929…` |
+
+发布后的实测（真实网络、走系统代理、无效凭据一律不涉及）：
+
+- 无凭据 `curl -I` 该资产 → **HTTP 302**（跳到 assets CDN；私有仓库在此会是 404，见下文私有化一节）。
+- `updater.latest_release()` → `version=4.4.0-jw.2`、4 个资产；`select_windows_installer()`
+  选中 `…-webm-chat-setup.exe`，`size=301864810`、`sha256=935941e7…`（来自 API 的 `digest`）。
+- `_trusted_https_url(自己的下载地址)` → `True`；`_trusted_https_url(github.com/MerZlin/…)` → `False`。
+- 生成的 `update.json` 经 `_release_from_payload()` 解析出的 size/sha256 与 Release 一致。
+
 ## 六、自更新链路：已改指自用 fork（2026-11-07）
 
 原状：`pet/updater.py:26` 写死 `REPO = 'MerZlin/dsh-pet-indesktop'`，`RELEASE_API` 取
@@ -316,10 +342,12 @@ git add update.json; git commit -m 'chore: 更新 update.json 指向 vX.Y.Z 自�
 不写半成品。提交后 jsDelivr 有缓存（`@main` 约 12 小时），期间回退路径可能还是旧清单
 ——正常，API 路径优先且可用。
 
-**发布前记得碰版本号**：更新判定走 `version_parts()`，只取数字前缀，
-`v4.4.0-jw.1` 与 `4.4.0` 相等 → **不会提示更新**。要让自更新真的触发，得把
-`pet/__init__.py` 的 `__version__` 提到更高（比如 `4.4.1`），它同时决定安装包的
-ProductVersion。tag 名随意，但别与上游已有 tag 重名。
+**关于版本号**（本机实测，2026-11-07）：`version_parts()` 会把 tag 里的数字全部取出来，
+所以 `version_parts('4.4.0-jw.2') == [4, 4, 0, 2]`，`is_newer('4.4.0-jw.2', '4.4.0')` 为
+`True`——**带自增后缀的 tag 会正常触发更新提示**。但如果 tag 是 `v4.4.0-jw`（后缀没有
+数字），就退化成 `[4, 4, 0]` 与 `4.4.0` 相等，不会提示。真要发新版时更稳妥的做法是把
+`pet/__init__.py` 的 `__version__` 一并抬到更高（比如 `4.4.1`），它同时决定安装包的
+ProductVersion；tag 名只需别与上游已有 tag 重名。
 
 ### 与之配套的两条仓库设置
 
@@ -337,6 +365,30 @@ git merge upstream/main          # 或 rebase；两者都会在本次改动的 6
 ```
 
 冲突面：`pet/chat/providers.py`（新增 4 个函数与两处调用）、`pet/vision.py`、
-`pet/screen_capture/translate.py`（各 1 行 model + 1 行 headers）、`docs/INDEX.md:148`
-（报告登记行）。测试文件冲突只可能来自上游自己也去修那 3 条时间炸弹——届时以「不依赖
-外部时钟/依赖内嵌数据」的原则取舍，别退回写死日期的写法。
+`pet/screen_capture/translate.py`（各 1 行 model + 1 行 headers）、`pet/updater.py`
+（`REPO`/`QUARK_PAN_URL` 两个常量）、`docs/INDEX.md:148`（报告登记行）。测试文件冲突只可能
+来自上游自己也去修那 3 条时间炸弹，或者也去改 `test_updater.py` / `test_pack_download.py`
+里的地址——届时以「不依赖外部时钟/依赖内嵌数据」的原则取舍，别退回写死日期的写法。
+
+## 八、如果改成 private 仓库（2026-11-07 核实）
+
+**结论：CI 还能跑，但计费与自更新链路都会变糟，不建议。** 依据
+[Actions 计费文档](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+与 [Actions limits](https://docs.github.com/en/actions/reference/limits)：
+
+| 维度 | public（现在） | private |
+|---|---|---|
+| 标准 GitHub 托管 runner | **完全免费、不计量** | 计量，从计划的 included compute 里扣 |
+| Free 计划额度 | 不适用 | 2,000 分钟/月（Windows 按 **2 倍**计费）→ 一次 44 分钟的构建约占 **88 分钟**配额，约 22 次/月 |
+| 构建产物存储 | 不占你的存储额度 | 计入 storage 配额；Free 只有 **500 MB**，而一次构建的 artifact 是 **1.22 GiB** → 一次就爆 |
+| Release | 任何人可直接下载 | **能建**，但资产下载要认证，未登录的 `curl`/更新器拿到的都是 **404** |
+| jsDelivr 回退 | 可用（`@main` 抓公开仓库） | 不可用（jsDelivr 只服务公开仓库） |
+
+对本项目的直接后果：`pet/updater.py` 的下载是**无凭据**的 HTTPS GET + 可选 jsDelivr
+清单，仓库一旦私有，`检查更新` 就再也下不到东西；要让它继续工作只能把 PAT 塞进客户端
+（等于把一个长期有效凭据分发给每个安装副本），不划算。
+
+如果确实要隐藏代码，可行折中是：**代码留 private，另建一个 public 的 releases-only
+仓库**承载安装包，把 `updater.REPO` 指到那个仓库；或者干脆保持 public——这是一份公开
+项目的 fork，真正属于你的只有那几个文件的改动。
+
