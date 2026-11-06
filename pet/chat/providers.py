@@ -1,6 +1,6 @@
 from __future__ import annotations
 import functools
-import json, ssl, threading, urllib.error, urllib.request
+import json, ssl, threading, urllib.error, urllib.parse, urllib.request, uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -62,13 +62,69 @@ def build_browser_headers(extra: dict | None = None) -> dict[str, str]:
     return headers
 
 
+# --- OpenCode（opencode.ai）端点适配 ---------------------------------------
+# Go 套餐的空闲模型由服务端按会话分摊：每个请求都要带稳定的
+# ``x-opencode-session``，缺了会在**鉴权之前**直接 400 MissingSessionID
+# （2026-11-06 本机实测 + issue #368：带上该头但 Key 无效才轮到 401）。
+# ID 用模块级常量而不是每请求新生成——换 ID 等于把每个请求都当成新会话，
+# 等于主动制造 400。
+_OPENCODE_HOST = 'opencode.ai'
+_OPENCODE_SESSION = uuid.uuid4().hex
+
+
+def _is_opencode_base(base_url) -> bool:
+    """``base_url`` 是否指向 opencode.ai 域（含子域）。
+
+    按**主机名**判定而不是路径：官方端点路径变过
+    （``/zen/go/v1`` → ``/inference/go/openai/v1``），跟主机走才不会随文档改版失效。
+    同时要求主机名等于域名或以 ``.域名`` 结尾，``notopencode.ai`` 这类形近域名
+    不能误命中。
+    """
+    try:
+        host = (urllib.parse.urlsplit(str(base_url or '').strip()).hostname or '').lower()
+    except ValueError:  # 非法 URL（如带空格）当普通 provider 处理
+        return False
+    return host == _OPENCODE_HOST or host.endswith('.' + _OPENCODE_HOST)
+
+
+def _opencode_headers(base_url) -> dict[str, str]:
+    """opencode.ai 端点的专属请求头；其它 provider 返回空 dict（零影响）。"""
+    if not _is_opencode_base(base_url): return {}
+    return {'x-opencode-session': _OPENCODE_SESSION}
+
+
+def endpoint_headers(base_url, extra: dict | None = None) -> dict[str, str]:
+    """provider 端点的完整请求头 = 浏览器头 + 调用点业务头 + 端点专属头。
+
+    聊天回答、文档说的"测试连接"、截图问答、截图翻译共用这一个出口，
+    避免 opencode 文档点名的问题客户端症状——"session information arrives on
+    some model paths, but is missing on others"。
+    """
+    headers = build_browser_headers(extra)
+    headers.update(_opencode_headers(base_url))
+    return headers
+
+
+def endpoint_model(base_url, model) -> str:
+    """把配置里的模型名还原成该端点 HTTP 请求要的写法。
+
+    opencode 自己的配置文件写 ``opencode-go/<id>``（``opencode.jsonc`` 的
+    ``"model": "opencode-go/kimi-k3"``），但它的 OpenAI 兼容端点只认**裸 id**
+    ——带前缀会被当成不存在的模型。其它 provider 原样返回。
+    """
+    name = str(model or '')
+    if _is_opencode_base(base_url) and name.lower().startswith('opencode-go/'):
+        return name.split('/', 1)[1]
+    return name
+
+
 def test_connection(config, timeout: float = 10.0):
     """发送一个最小的非流式请求验证端点连通性（含 TLS 校验）。
     返回 (ok: bool, message: str)，供设置界面"测试连接"使用，不写入任何状态。"""
     try:
         endpoint = normalize_chat_endpoint(config.base_url, config.chat_path)
-        payload = {'model': config.model, 'messages': [{'role': 'user', 'content': 'ping'}], 'max_tokens': 1, 'stream': False}
-        headers = build_browser_headers({'Content-Type': 'application/json'})
+        payload = {'model': endpoint_model(config.base_url, config.model), 'messages': [{'role': 'user', 'content': 'ping'}], 'max_tokens': 1, 'stream': False}
+        headers = endpoint_headers(config.base_url, {'Content-Type': 'application/json'})
         if config.api_key: headers['Authorization'] = f'Bearer {config.api_key}'
         req = urllib.request.Request(endpoint, data=json.dumps(payload, ensure_ascii=False).encode('utf-8'), headers=headers, method='POST')
         with urllib.request.urlopen(req, timeout=timeout, context=_make_ssl_context(config.verify_ssl)) as resp:
@@ -211,7 +267,10 @@ def inject_search_context(messages, notes: str):
 class OpenAICompatibleProvider:
     def _open(self,payload,config,accept):
         endpoint=normalize_chat_endpoint(config.base_url,config.chat_path)
-        headers=build_browser_headers({'Content-Type':'application/json','Accept':accept})
+        # 模型名在这里统一还原成端点要的写法（opencode.ai 去 opencode-go/ 前缀），
+        # 流式回答、检索工具轮、非流式 JSON 三条路都从这个出口出去。
+        payload=dict(payload,model=endpoint_model(config.base_url,payload.get('model',config.model)))
+        headers=endpoint_headers(config.base_url,{'Content-Type':'application/json','Accept':accept})
         if config.api_key: headers['Authorization']=f'Bearer {config.api_key}'
         req=urllib.request.Request(endpoint,data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers=headers,method='POST')
         try: return urllib.request.urlopen(req,timeout=config.timeout,context=_make_ssl_context(config.verify_ssl))

@@ -145,6 +145,7 @@
 
 ## PR 报告存档
 
+- [OpenCode Go 端点支持（2026-11-06）](PR-REPORT-OPENCODE-GO-2026-11-06.md)：issue #368——`opencode.ai` 的 Go 套餐端点在鉴权**之前**校验 `x-opencode-session`，缺该头固定 `400 MissingSessionID`（`build_browser_headers()` 从来不发它），且 `opencode-go/<id>` 是 opencode 自身配置文件写法、直连 HTTP 必须发裸 id。修法＝`providers.py` 新增 `endpoint_headers()` / `endpoint_model()`（按**主机名**判定 `opencode.ai`，含子域、排除 `notopencode.ai` 这类形近域）+ 模块级 `uuid4().hex` 会话常量，在 `test_connection` / `_open`（流式、检索工具轮、非流式 JSON 三路出口）/ `pet/vision.py` / `screen_capture/translate.py` 四条真实发包路径统一收口；不新增配置键、依赖、线程。判据是状态码位移：同无效 Key 下 `400 MissingSessionID → 401 Invalid credential`（Go）/ `401`（Zen，不校验该头）。净增每请求 ≈ +5.1 µs 组包、10 万次调用堆增量 0 KiB。**如实登记**：无有效 Go Key，真实 200 未验；会话 ID 为进程级（非每聊天会话一个）；工作区不是 git 仓库，无分支/提交/PR，numstat 由 difflib 复原原文实算。
 - [跨屏过缝通行与落点吸附（2026-10-22）](PR-REPORT-CROSS-SCREEN-CORRIDOR-2026-10-22.md)：跨屏移动语义从 band 收窄改为「通行域=并集（含空洞）、静止域=各屏、四处收口吸附」，含侧墙低速截止、两轮 k3 盲审记录与先红后绿证据；改跨屏拖拽/抛掷物理、写 `_clamp_rects` 多矩形域、动 `snap_to_nearest_screen` 或排查「宠物停在看不见的地方」时必读。**先例**：① 语义改动要逐个收口点查吸附（落地/原地放下/落岛/弹弓取消，漏一个就是把宠钉死在空洞）；② `__init__` 里 set_pos 先于字段初始化，钳制条件必须 getattr 兜底；③ 覆盖判定用并集（QRegion）而非中心点，否则半身悬空漏判。
 - [macOS 多屏与 Dock 修复（2026-10-21）](PR-REPORT-MACOS-DESKTOP-2026-10-21.md)：Mac 双屏每屏一窗、设置进程启动即 Accessory，含用户副屏可见及单 Dock 图标确认、75 秒焦点观察、构建安装与测试证据；改 Mac 拓扑或 Dock 启动策略时查阅；多个 Spaces 的后续修复见下一项。
 - [macOS 多屏 Spaces 可见性（2026-10-21）](PR-REPORT-MACOS-SPACES-2026-10-21.md)：合成窗加入所有 Spaces，并在窗口重建后重放；包含原生策略读回、构建安装与用户跨屏/切换桌面验收；修改 Mac 合成窗 Spaces 策略或排查切换桌面后宠物消失时查阅。

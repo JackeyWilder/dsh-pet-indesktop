@@ -63,13 +63,13 @@ def translate_text(text: str, config, *, target: str | None = None) -> str:
 
     # 延迟导入：无 Chat 变体（pet.chat 被排除）下本函数不会被调用
     from ..chat.providers import (
-        _make_ssl_context, build_browser_headers, normalize_chat_endpoint,
+        _make_ssl_context, endpoint_headers, endpoint_model, normalize_chat_endpoint,
     )
 
     target = _target_language(source) if target in (None, "", "auto") else str(target)
     endpoint = normalize_chat_endpoint(provider.base_url, provider.chat_path)
     payload = {
-        "model": provider.model,
+        "model": endpoint_model(provider.base_url, provider.model),
         "messages": [
             {"role": "system", "content": (
                 f"你是翻译引擎。把用户给的文本翻译成{target}。"
@@ -83,7 +83,7 @@ def translate_text(text: str, config, *, target: str | None = None) -> str:
         "temperature": 0.2,
         "max_tokens": max(1024, min(int(provider.max_tokens), 4096)),
     }
-    headers = build_browser_headers({"Content-Type": "application/json"})
+    headers = endpoint_headers(provider.base_url, {"Content-Type": "application/json"})
     if provider.api_key:
         headers["Authorization"] = f"Bearer {provider.api_key}"
 
